@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="10dp">
+
+    <ImageView
+        android:id="@+id/ivFileIcon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:contentDescription="File type icon"
+        tools:src="@android:drawable/ic_menu_agenda" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="12dp">
+
+        <TextView
+            android:id="@+id/tvFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            tools:text="chapter_01_introduction.txt" />
+
+        <TextView
+            android:id="@+id/tvFileInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary"
+            tools:text="TXT • 24 KB" />
+
+    </LinearLayout>
+
+</LinearLayout>
