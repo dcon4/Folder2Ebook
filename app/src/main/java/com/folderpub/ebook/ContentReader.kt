@@ -3,8 +3,9 @@ package com.folderpub.ebook
 import android.content.Context
 import android.net.Uri
 import com.folderpub.debug.DebugLogger
-import com.itextpdf.text.pdf.PdfReader
-import com.itextpdf.text.pdf.parser.PdfTextExtractor
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.text.PDFTextStripper
 import org.jsoup.Jsoup
 import java.io.InputStream
 
@@ -19,6 +20,14 @@ object ContentReader {
 
     private const val TAG = "ContentReader"
     private const val MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+    private var pdfBoxInitialized = false
+
+    fun ensurePdfBoxInitialized(context: Context) {
+        if (!pdfBoxInitialized) {
+            PDFBoxResourceLoader.init(context)
+            pdfBoxInitialized = true
+        }
+    }
 
     fun readChapter(context: Context, file: ChapterFile): ChapterContent {
         return try {
@@ -109,6 +118,7 @@ object ContentReader {
         contentResolver: android.content.ContentResolver,
         file: ChapterFile
     ): ChapterContent {
+        var document: PDDocument? = null
         return try {
             val inputStream = contentResolver.openInputStream(file.uri)
                 ?: return ChapterContent(
@@ -117,22 +127,16 @@ object ContentReader {
                     isPdf = true,
                     pdfExtractionWarning = true
                 )
-            val reader = PdfReader(inputStream)
-            val pageCount = reader.numberOfPages
-            val text = StringBuilder()
-            for (i in 1..pageCount) {
-                try {
-                    text.append(PdfTextExtractor.getTextFromPage(reader, i))
-                    text.append("\n")
-                } catch (_: Exception) {
-                }
-            }
-            reader.close()
+            document = PDDocument.load(inputStream)
+            val stripper = PDFTextStripper()
+            stripper.sortByPosition = true
+            val text = stripper.getText(document)
 
-            val wordCount = text.toString().split("\\s+".toRegex()).size
+            val pageCount = document.numberOfPages
+            val wordCount = text.split("\\s+".toRegex()).size
             val warning = wordCount < 10 && pageCount > 0
 
-            val escaped = text.toString()
+            val escaped = text
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
@@ -144,7 +148,7 @@ object ContentReader {
                 "<pre>$escaped</pre>"
             }
 
-            val title = TitleExtractor.extractTitle(file.name, text.toString(), isHtml = false)
+            val title = TitleExtractor.extractTitle(file.name, text, isHtml = false)
             ChapterContent(
                 title = title,
                 bodyHtml = bodyHtml,
@@ -159,6 +163,8 @@ object ContentReader {
                 isPdf = true,
                 pdfExtractionWarning = true
             )
+        } finally {
+            try { document?.close() } catch (_: Exception) {}
         }
     }
 
