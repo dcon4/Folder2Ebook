@@ -20,9 +20,9 @@ object DebugLogger {
 
     private const val TAG = "FolderPub"
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-    private val logDateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
 
     var verboseEnabled = false
+    private var appContext: Context? = null
 
     fun log(tag: String, message: String) {
         val line = "${dateFormat.format(Date())} [${tag}] $message"
@@ -39,7 +39,8 @@ object DebugLogger {
 
     private fun writeToFile(line: String) {
         try {
-            val logDir = File(getLogDir(), "logs")
+            val ctx = appContext ?: return
+            val logDir = File(ctx.cacheDir, "logs")
             logDir.mkdirs()
             val logFile = File(logDir, "folderpub.log")
             logFile.appendText("$line\n")
@@ -48,15 +49,11 @@ object DebugLogger {
         }
     }
 
-    private var logDir: String? = null
-
     fun init(context: Context) {
-        logDir = context.cacheDir.absolutePath
+        appContext = context.applicationContext
         verboseEnabled = false
         log(TAG, "DebugLogger initialized")
     }
-
-    fun getLogDir(): String = logDir ?: "/tmp"
 
     fun getLogFile(context: Context): File {
         val logDir = File(context.cacheDir, "logs")
@@ -83,9 +80,10 @@ object DebugLogger {
         context.startActivity(Intent.createChooser(intent, "Share debug log"))
     }
 
-    val verboseEnabledFlow: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[KEY_VERBOSE] ?: false
-    }
+    fun verboseEnabledFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { prefs ->
+            prefs[KEY_VERBOSE] ?: false
+        }
 
     suspend fun setVerboseEnabled(context: Context, enabled: Boolean) {
         context.dataStore.edit { prefs ->

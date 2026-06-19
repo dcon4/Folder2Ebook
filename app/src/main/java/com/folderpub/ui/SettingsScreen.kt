@@ -8,6 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.folderpub.debug.DebugLogger
 import kotlinx.coroutines.launch
@@ -18,7 +20,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val verboseEnabled by DebugLogger.verboseEnabledFlow.collectAsState(initial = false)
+    val verboseEnabled by DebugLogger.verboseEnabledFlow(context)
+        .collectAsState(initial = false)
 
     Scaffold(
         topBar = {
@@ -26,8 +29,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(
-                        onClick = onBack,
-                        contentDescription = "Back"
+                        onClick = onBack
                     ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
@@ -63,7 +65,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                             DebugLogger.setVerboseEnabled(context, enabled)
                         }
                     },
-                    contentDescription = if (verboseEnabled) "Disable verbose logging" else "Enable verbose logging"
+                    modifier = Modifier.semantics {
+                        contentDescription = if (verboseEnabled) "Disable verbose logging" else "Enable verbose logging"
+                    }
                 )
             }
 

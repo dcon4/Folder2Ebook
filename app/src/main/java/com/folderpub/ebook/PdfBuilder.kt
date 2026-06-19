@@ -1,14 +1,17 @@
 package com.folderpub.ebook
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import com.folderpub.debug.DebugLogger
-import org.apache.pdfbox.io.MemoryUsageSetting
-import org.apache.pdfbox.multipdf.PDFMergerUtility
+import com.itextpdf.text.Document
+import com.itextpdf.text.Rectangle
+import com.itextpdf.text.pdf.PdfContentByte
+import com.itextpdf.text.pdf.PdfImportedPage
+import com.itextpdf.text.pdf.PdfReader
+import com.itextpdf.text.pdf.PdfWriter
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -137,27 +140,48 @@ object PdfBuilder {
         }
 
         try {
-            val merger = PDFMergerUtility()
-            merger.destinationStream = outputStream
+            val sources = mutableListOf<PdfReader>()
+            try {
+                sources.add(PdfReader(generatedPdf.absolutePath))
 
-            merger.addSource(generatedPdf)
-
-            for (uri in inputPdfUris) {
-                try {
-                    val inputStream = context.contentResolver.openInputStream(uri)
-                    if (inputStream != null) {
-                        merger.addSource(inputStream)
+                for (uri in inputPdfUris) {
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        if (inputStream != null) {
+                            sources.add(PdfReader(inputStream))
+                        }
+                    } catch (e: Exception) {
+                        DebugLogger.log(TAG, "Failed to read PDF $uri: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    DebugLogger.log(TAG, "Failed to add PDF source $uri: ${e.message}")
+                }
+
+                val totalPages = sources.sumOf { it.numberOfPages }
+                val document = Document()
+                val writer = PdfWriter.getInstance(document, outputStream)
+                document.open()
+                val cb = writer.directContent
+
+                for (reader in sources) {
+                    for (pageNum in 1..reader.numberOfPages) {
+                        val rect = reader.getPageSize(pageNum)
+                        document.newPage(rect)
+                        val page: PdfImportedPage = writer.getImportedPage(reader, pageNum)
+                        val scaleX = rect.width / rect.width
+                        val scaleY = rect.height / rect.height
+                        cb.addTemplate(page, scaleX, 0f, 0f, scaleY, 0f, 0f)
+                    }
+                }
+
+                document.close()
+                DebugLogger.log(
+                    TAG,
+                    "PDF merged: ${generatedChapters.size} generated chapters + ${inputPdfUris.size} input PDFs ($totalPages total pages)"
+                )
+            } finally {
+                for (reader in sources) {
+                    try { reader.close() } catch (_: Exception) {}
                 }
             }
-
-            merger.mergeDocuments(MemoryUsageSetting.setupMainMemoryOnly())
-            DebugLogger.log(
-                TAG,
-                "PDF merged: ${generatedChapters.size} generated chapters + ${inputPdfUris.size} input PDFs"
-            )
         } catch (e: Exception) {
             DebugLogger.log(TAG, "PDF merge error: ${e.message}")
             throw e

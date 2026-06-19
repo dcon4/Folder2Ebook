@@ -36,13 +36,13 @@ Used only if content is empty after trimming.
 
 - `.html` / `.htm` -- parsed with Jsoup, body content extracted
 - `.txt` -- read as UTF-8 plain text
-- `.pdf` -- text extracted via PDFBox (may warn if extraction is poor)
+- `.pdf` -- text extracted via iTextG (may warn if extraction is poor)
 
 ## Output formats
 
 - **EPUB 3** (default) -- ZIP-based ebook format with XHTML chapters, CSS, TOC
 - **PDF** (option) -- generated with Android PdfDocument API.
-  PDF input files are merged page-by-page using PDFBox PdfMergerUtility.
+  PDF input files are merged page-by-page using iTextG.
 
 ## Multi-volume splitting
 

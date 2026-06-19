@@ -75,14 +75,12 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
                 title = { Text("FolderPub") },
                 actions = {
                     IconButton(
-                        onClick = { DebugLogger.shareLog(context) },
-                        contentDescription = "Share debug log"
+                        onClick = { DebugLogger.shareLog(context) }
                     ) {
                         Icon(Icons.Default.BugReport, contentDescription = "Share debug log")
                     }
                     IconButton(
-                        onClick = onNavigateToSettings,
-                        contentDescription = "Settings"
+                        onClick = onNavigateToSettings
                     ) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -267,10 +265,8 @@ private fun readChapters(
             var warnings = 0
             for (file in files) {
                 val content = ContentReader.readChapter(context, file)
-                if (content != null) {
-                    chapters.add(content)
-                    if (content.pdfExtractionWarning) warnings++
-                }
+                chapters.add(content)
+                if (content.pdfExtractionWarning) warnings++
             }
             (context as? android.app.Activity)?.runOnUiThread {
                 onChapters(chapters, warnings)
@@ -297,9 +293,7 @@ private fun buildEbook(
     scope.launch(Dispatchers.IO) {
         try {
             val volumes = VolumeSplitter.splitIntoVolumes(chapters, maxPagesPerVolume)
-            val inputPdfUris = chapters
-                .filter { it.isPdf }
-                .map { /* need original URIs - skip for now */ }
+            val inputPdfUris = emptyList<Uri>()
 
             for (volume in volumes) {
                 val volumeTitle = if (volumes.size > 1) {

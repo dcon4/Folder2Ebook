@@ -56,6 +56,8 @@ android {
             excludes += "/META-INF/DEPENDENCIES"
             excludes += "/META-INF/LICENSE"
             excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE.txt"
             excludes += "/META-INF/*.kotlin_module"
         }
     }
@@ -81,7 +83,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("org.jsoup:jsoup:1.17.2")
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("com.itextpdf:itextg:5.5.13.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

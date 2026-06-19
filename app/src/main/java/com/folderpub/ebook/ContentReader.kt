@@ -3,10 +3,9 @@ package com.folderpub.ebook
 import android.content.Context
 import android.net.Uri
 import com.folderpub.debug.DebugLogger
-import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.text.PDFTextStripper
+import com.itextpdf.text.pdf.PdfReader
+import com.itextpdf.text.pdf.parser.PdfTextExtractor
 import org.jsoup.Jsoup
-import org.jsoup.safety.Safelist
 import java.io.InputStream
 
 data class ChapterContent(
@@ -21,7 +20,7 @@ object ContentReader {
     private const val TAG = "ContentReader"
     private const val MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 
-    fun readChapter(context: Context, file: ChapterFile): ChapterContent? {
+    fun readChapter(context: Context, file: ChapterFile): ChapterContent {
         return try {
             val contentResolver = context.contentResolver
             if (file.sizeBytes > MAX_FILE_SIZE_BYTES) {
@@ -35,12 +34,17 @@ object ContentReader {
             }
 
             when (file.extension) {
-                "html", "htm" -> readHtml(context, contentResolver, file)
-                "txt" -> readText(context, contentResolver, file)
-                "pdf" -> readPdf(context, contentResolver, file)
+                "html", "htm" -> readHtml(contentResolver, file)
+                "txt" -> readText(contentResolver, file)
+                "pdf" -> readPdf(contentResolver, file)
                 else -> {
                     DebugLogger.log(TAG, "Unsupported extension: ${file.extension}")
-                    null
+                    ChapterContent(
+                        title = file.name,
+                        bodyHtml = "<p>[Unsupported file type]</p>",
+                        isPdf = false,
+                        pdfExtractionWarning = false
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -55,11 +59,16 @@ object ContentReader {
     }
 
     private fun readHtml(
-        context: Context,
         contentResolver: android.content.ContentResolver,
         file: ChapterFile
     ): ChapterContent {
-        val rawHtml = readStream(contentResolver, file.uri) ?: return null
+        val rawHtml = readStream(contentResolver, file.uri)
+            ?: return ChapterContent(
+                title = file.name,
+                bodyHtml = "<p>[Empty file]</p>",
+                isPdf = false,
+                pdfExtractionWarning = false
+            )
         val doc = Jsoup.parse(rawHtml)
         val bodyHtml = doc.body().html()
         val title = TitleExtractor.extractTitle(file.name, rawHtml, isHtml = true)
@@ -72,11 +81,16 @@ object ContentReader {
     }
 
     private fun readText(
-        context: Context,
         contentResolver: android.content.ContentResolver,
         file: ChapterFile
     ): ChapterContent {
-        val text = readStream(contentResolver, file.uri) ?: return null
+        val text = readStream(contentResolver, file.uri)
+            ?: return ChapterContent(
+                title = file.name,
+                bodyHtml = "<p>[Empty file]</p>",
+                isPdf = false,
+                pdfExtractionWarning = false
+            )
         val escaped = text
             .replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -92,24 +106,33 @@ object ContentReader {
     }
 
     private fun readPdf(
-        context: Context,
         contentResolver: android.content.ContentResolver,
         file: ChapterFile
-    ): ChapterContent? {
-        var document: PDDocument? = null
+    ): ChapterContent {
         return try {
             val inputStream = contentResolver.openInputStream(file.uri)
-                ?: return null
-            document = PDDocument.load(inputStream)
-            val stripper = PDFTextStripper()
-            stripper.sortByPosition = true
-            val text = stripper.getText(document)
+                ?: return ChapterContent(
+                    title = file.name,
+                    bodyHtml = "<p>[Cannot open PDF]</p>",
+                    isPdf = true,
+                    pdfExtractionWarning = true
+                )
+            val reader = PdfReader(inputStream)
+            val pageCount = reader.numberOfPages
+            val text = StringBuilder()
+            for (i in 1..pageCount) {
+                try {
+                    text.append(PdfTextExtractor.getTextFromPage(reader, i))
+                    text.append("\n")
+                } catch (_: Exception) {
+                }
+            }
+            reader.close()
 
-            val pageCount = document.numberOfPages
-            val wordCount = text.split("\\s+".toRegex()).size
+            val wordCount = text.toString().split("\\s+".toRegex()).size
             val warning = wordCount < 10 && pageCount > 0
 
-            val escaped = text
+            val escaped = text.toString()
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
@@ -121,7 +144,7 @@ object ContentReader {
                 "<pre>$escaped</pre>"
             }
 
-            val title = TitleExtractor.extractTitle(file.name, text, isHtml = false)
+            val title = TitleExtractor.extractTitle(file.name, text.toString(), isHtml = false)
             ChapterContent(
                 title = title,
                 bodyHtml = bodyHtml,
@@ -136,8 +159,6 @@ object ContentReader {
                 isPdf = true,
                 pdfExtractionWarning = true
             )
-        } finally {
-            try { document?.close() } catch (_: Exception) {}
         }
     }
 
