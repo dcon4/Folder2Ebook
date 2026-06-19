@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.folderpub.app"
+    namespace = "com.folderpub"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.folderpub.app"
+        applicationId = "com.folderpub"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

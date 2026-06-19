@@ -24,8 +24,12 @@ object ContentReader {
 
     fun ensurePdfBoxInitialized(context: Context) {
         if (!pdfBoxInitialized) {
-            PDFBoxResourceLoader.init(context)
-            pdfBoxInitialized = true
+            try {
+                PDFBoxResourceLoader.init(context)
+                pdfBoxInitialized = true
+            } catch (e: Exception) {
+                DebugLogger.log(TAG, "PDFBox init failed: ${e.message}")
+            }
         }
     }
 
