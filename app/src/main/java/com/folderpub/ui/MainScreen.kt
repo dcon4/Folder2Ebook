@@ -245,8 +245,8 @@ private fun scanFolder(
                 onResult(result)
                 onScanning(false)
             }
-        } catch (e: Exception) {
-            DebugLogger.log("MainScreen", "Scan error: ${e.message}")
+        } catch (e: Throwable) {
+            DebugLogger.log("MainScreen", "Scan error: ${e.javaClass.simpleName} - ${e.message}")
             (context as? android.app.Activity)?.runOnUiThread {
                 onScanning(false)
             }
@@ -271,8 +271,8 @@ private fun readChapters(
             (context as? android.app.Activity)?.runOnUiThread {
                 onChapters(chapters, warnings)
             }
-        } catch (e: Exception) {
-            DebugLogger.log("MainScreen", "Read error: ${e.message}")
+        } catch (e: Throwable) {
+            DebugLogger.log("MainScreen", "Read error: ${e.javaClass.simpleName} - ${e.message}")
         }
     }.start()
 }
@@ -339,13 +339,13 @@ private fun buildEbook(
                 onBuilding(false)
                 Toast.makeText(context, "Ebook saved successfully!", Toast.LENGTH_LONG).show()
             }
-        } catch (e: Exception) {
-            DebugLogger.log("MainScreen", "Build error: ${e.message}")
+        } catch (e: Throwable) {
+            DebugLogger.log("MainScreen", "Build error: ${e.javaClass.simpleName} - ${e.message}")
             withContext(Dispatchers.Main) {
-                onStatus("Error: ${e.message}")
+                onStatus("Error: ${e.javaClass.simpleName} - ${e.message}")
                 onProgress("")
                 onBuilding(false)
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Build failed: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -356,31 +356,35 @@ private fun saveToMediaStore(
     fileName: String,
     mimeType: String
 ): Uri? {
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
+    return try {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
         }
-    }
 
-    val uri = context.contentResolver.insert(
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val collectionUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Downloads.EXTERNAL_CONTENT_URI
         } else {
             MediaStore.Files.getContentUri("external")
-        },
-        contentValues
-    )
+        }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
-        contentValues.clear()
-        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-        context.contentResolver.update(uri, contentValues, null, null)
+        val uri = context.contentResolver.insert(collectionUri, contentValues)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
+            contentValues.clear()
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            context.contentResolver.update(uri, contentValues, null, null)
+        }
+
+        uri
+    } catch (e: Throwable) {
+        DebugLogger.log("MainScreen", "MediaStore save error: ${e.message}")
+        null
     }
-
-    return uri
 }
 
 private fun formatSize(bytes: Long): String {
