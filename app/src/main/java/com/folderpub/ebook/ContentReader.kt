@@ -119,7 +119,7 @@ object ContentReader {
         file: ChapterFile
     ): ChapterContent {
         var document: PDDocument? = null
-        try {
+        return try {
             val inputStream = contentResolver.openInputStream(file.uri)
                 ?: return ChapterContent(title = file.name, bodyHtml = "<p>[Cannot open PDF]</p>", isPdf = true, pdfExtractionWarning = true)
             document = PDDocument.load(inputStream)
