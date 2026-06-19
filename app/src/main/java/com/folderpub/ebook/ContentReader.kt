@@ -4,8 +4,8 @@ import android.content.Context
 import android.net.Uri
 import com.folderpub.debug.DebugLogger
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
-import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.text.PDFTextStripper
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import org.jsoup.Jsoup
 import java.io.InputStream
 
