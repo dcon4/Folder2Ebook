@@ -4,7 +4,6 @@ import com.folderpub.debug.DebugLogger
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import org.jsoup.select.Evaluator
 
 object ReadabilityFormatter {
 
@@ -57,9 +56,9 @@ object ReadabilityFormatter {
     }
 
     private fun scoreElement(el: Element): Int {
-        val textLen = el.textContent.length
-        val linkLen = el.select("a").sumOf { it.textContent.length }
-        val commas = el.textContent.count { it == ',' }
+        val textLen = el.text().length
+        val linkLen = el.select("a").sumOf { it.text().length }
+        val commas = el.text().count { it == ',' }
         return textLen - linkLen + (commas * 5)
     }
 
@@ -77,8 +76,8 @@ object ReadabilityFormatter {
     private fun removeCruft(doc: Document) {
         doc.select("script, style, nav, footer, header, aside, noscript, iframe, form").remove()
         doc.select("*").forEach { el ->
-            if (el.id.isNotEmpty()) {
-                val id = el.id.lowercase()
+            if (el.id().isNotEmpty()) {
+                val id = el.id().lowercase()
                 if (id in setOf("sidebar", "nav", "navigation", "menu", "footer", "header", "comments", "comment", "advertisement", "ads", "social", "share", "related-posts", "recommendations")) {
                     el.remove()
                 }
