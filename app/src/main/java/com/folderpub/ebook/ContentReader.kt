@@ -6,8 +6,6 @@ import com.folderpub.debug.DebugLogger
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
-import org.jsoup.Jsoup
-import java.io.InputStream
 
 data class ChapterContent(
     val title: String,
@@ -96,9 +94,9 @@ object ContentReader {
     ): ChapterContent {
         val rawHtml = readStream(contentResolver, file.uri)
             ?: return ChapterContent(title = file.name, bodyHtml = "<p>[Empty file]</p>", isPdf = false, pdfExtractionWarning = false)
-        val doc = Jsoup.parse(rawHtml)
-        val bodyHtml = doc.body().html()
+        val bodyHtml = ReadabilityFormatter.extractArticle(rawHtml)
         val title = TitleExtractor.extractTitle(file.name, rawHtml, isHtml = true)
+        DebugLogger.verbose(TAG, "Read HTML: ${file.name} -> ${bodyHtml.length} chars")
         return ChapterContent(title = title, bodyHtml = bodyHtml, isPdf = false, pdfExtractionWarning = false)
     }
 
@@ -108,9 +106,9 @@ object ContentReader {
     ): ChapterContent {
         val text = readStream(contentResolver, file.uri)
             ?: return ChapterContent(title = file.name, bodyHtml = "<p>[Empty file]</p>", isPdf = false, pdfExtractionWarning = false)
-        val escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        val bodyHtml = "<pre>$escaped</pre>"
+        val bodyHtml = ReadabilityFormatter.formatTextAsHtml(text)
         val title = TitleExtractor.extractTitle(file.name, text, isHtml = false)
+        DebugLogger.verbose(TAG, "Read text: ${file.name} -> ${bodyHtml.length} chars")
         return ChapterContent(title = title, bodyHtml = bodyHtml, isPdf = false, pdfExtractionWarning = false)
     }
 

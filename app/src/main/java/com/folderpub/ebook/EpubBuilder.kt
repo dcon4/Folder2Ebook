@@ -82,20 +82,69 @@ object EpubBuilder {
   line-height: 1.6;
   margin: 1em 2em;
 }
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
   font-family: sans-serif;
+  margin: 1em 0 0.5em;
+}
+h1 { font-size: 1.4em; }
+h2 { font-size: 1.2em; }
+h3 { font-size: 1.1em; }
+p {
+  margin: 0.5em 0;
+  text-align: justify;
 }
 pre {
   font-family: monospace;
   white-space: pre-wrap;
-  font-size: 0.9em;
+  font-size: 0.85em;
+  background: #f5f5f5;
+  padding: 0.5em;
+  border: 1px solid #ddd;
 }
-p {
+code {
+  font-family: monospace;
+  font-size: 0.9em;
+  background: #f5f5f5;
+  padding: 0.1em 0.3em;
+}
+blockquote {
+  margin: 0.5em 2em;
+  padding: 0 1em;
+  border-left: 3px solid #ccc;
+  color: #555;
+}
+ul, ol {
   margin: 0.5em 0;
+  padding-left: 2em;
+}
+li {
+  margin: 0.2em 0;
 }
 img {
   max-width: 100%;
   height: auto;
+}
+figure {
+  margin: 1em 0;
+  text-align: center;
+}
+figcaption {
+  font-size: 0.85em;
+  color: #666;
+  margin-top: 0.3em;
+}
+table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 0.3em 0.5em;
+}
+th {
+  background: #eee;
+  font-weight: bold;
 }"""
 
     private fun chapterXhtml(chapter: ChapterContent, id: String): String = """<?xml version="1.0" encoding="UTF-8"?>

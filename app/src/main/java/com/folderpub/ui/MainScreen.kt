@@ -288,11 +288,13 @@ private fun buildEbook(
     onBuilding: (Boolean) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope
 ) {
-    onBuilding(true)
-    onProgress("Splitting into volumes...")
-    scope.launch(Dispatchers.IO) {
+    scope.launch(Dispatchers.Main) {
+        onBuilding(true)
+        onProgress("Splitting into volumes...")
         try {
-            val volumes = VolumeSplitter.splitIntoVolumes(chapters, maxPagesPerVolume)
+            val volumes = withContext(Dispatchers.IO) {
+                VolumeSplitter.splitIntoVolumes(chapters, maxPagesPerVolume)
+            }
             val inputPdfUris = emptyList<Uri>()
 
             for (volume in volumes) {
@@ -304,49 +306,47 @@ private fun buildEbook(
 
                 onProgress("Building volume ${volume.index} of ${volumes.size}...")
 
-                if (format == "EPUB") {
-                    val uri = saveToMediaStore(context, "$volumeTitle.epub", "application/epub+zip")
-                    if (uri != null) {
-                        context.contentResolver.openOutputStream(uri)?.use { os ->
-                            EpubBuilder.buildEpub(
-                                context = context,
-                                chapters = volume.chapters,
-                                outputStream = os,
-                                bookTitle = volumeTitle
-                            )
+                withContext(Dispatchers.IO) {
+                    if (format == "EPUB") {
+                        val uri = saveToMediaStore(context, "$volumeTitle.epub", "application/epub+zip")
+                        if (uri != null) {
+                            context.contentResolver.openOutputStream(uri)?.use { os ->
+                                EpubBuilder.buildEpub(
+                                    context = context,
+                                    chapters = volume.chapters,
+                                    outputStream = os,
+                                    bookTitle = volumeTitle
+                                )
+                            }
                         }
-                    }
-                } else {
-                    val uri = saveToMediaStore(context, "$volumeTitle.pdf", "application/pdf")
-                    if (uri != null) {
-                        context.contentResolver.openOutputStream(uri)?.use { os ->
-                            PdfBuilder.buildPdf(
-                                context = context,
-                                chapters = volume.chapters,
-                                inputPdfUris = emptyList(),
-                                outputStream = os,
-                                bookTitle = volumeTitle
-                            )
+                    } else {
+                        val uri = saveToMediaStore(context, "$volumeTitle.pdf", "application/pdf")
+                        if (uri != null) {
+                            context.contentResolver.openOutputStream(uri)?.use { os ->
+                                PdfBuilder.buildPdf(
+                                    context = context,
+                                    chapters = volume.chapters,
+                                    inputPdfUris = emptyList(),
+                                    outputStream = os,
+                                    bookTitle = volumeTitle
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            withContext(Dispatchers.Main) {
-                val volumeWord = if (volumes.size == 1) "" else " (${volumes.size} volumes)"
-                onStatus("Done! $bookTitle saved as $format$volumeWord")
-                onProgress("")
-                onBuilding(false)
-                Toast.makeText(context, "Ebook saved successfully!", Toast.LENGTH_LONG).show()
-            }
+            val volumeWord = if (volumes.size == 1) "" else " (${volumes.size} volumes)"
+            onStatus("Done! $bookTitle saved as $format$volumeWord")
+            onProgress("")
+            onBuilding(false)
+            Toast.makeText(context, "Ebook saved successfully!", Toast.LENGTH_LONG).show()
         } catch (e: Throwable) {
             DebugLogger.log("MainScreen", "Build error: ${e.javaClass.simpleName} - ${e.message}")
-            withContext(Dispatchers.Main) {
-                onStatus("Error: ${e.javaClass.simpleName} - ${e.message}")
-                onProgress("")
-                onBuilding(false)
-                Toast.makeText(context, "Build failed: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-            }
+            onStatus("Error: ${e.javaClass.simpleName} - ${e.message}")
+            onProgress("")
+            onBuilding(false)
+            Toast.makeText(context, "Build failed: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
         }
     }
 }

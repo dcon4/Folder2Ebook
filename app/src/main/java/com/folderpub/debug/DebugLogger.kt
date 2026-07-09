@@ -19,58 +19,64 @@ private val Context.dataStore by preferencesDataStore(name = "debug_prefs")
 object DebugLogger {
 
     private const val TAG = "FolderPub"
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private const val APP_NAME = "folderpub"
+    private val lineFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val fileNameFormat = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US)
 
     var verboseEnabled = false
-    private var appContext: Context? = null
+    private var logFile: File? = null
 
     fun log(tag: String, message: String) {
-        val line = "${dateFormat.format(Date())} [${tag}] $message"
+        val line = "${lineFormat.format(Date())} [${tag}] $message"
         Log.d(tag, message)
         writeToFile(line)
     }
 
     fun verbose(tag: String, message: String) {
         if (!verboseEnabled) return
-        val line = "${dateFormat.format(Date())} [${tag}] [VERBOSE] $message"
+        val line = "${lineFormat.format(Date())} [${tag}] [VERBOSE] $message"
         Log.v(tag, message)
         writeToFile(line)
     }
 
     private fun writeToFile(line: String) {
         try {
-            val ctx = appContext ?: return
-            val logDir = File(ctx.cacheDir, "logs")
-            logDir.mkdirs()
-            val logFile = File(logDir, "folderpub.log")
-            logFile.appendText("$line\n")
+            val file = logFile ?: return
+            file.appendText("$line\n")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write log", e)
         }
     }
 
     fun init(context: Context) {
-        appContext = context.applicationContext
         verboseEnabled = false
+
+        val logDir = File(context.cacheDir, "logs")
+        logDir.mkdirs()
+        val now = fileNameFormat.format(Date())
+        logFile = File(logDir, "${APP_NAME}-debug.log.$now.txt")
+
+        val buildNumber = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        } catch (e: Exception) {
+            0L
+        }
+        val header = "${lineFormat.format(Date())} [$APP_NAME] [VERBOSE] Logger initialized (build $buildNumber)"
+        logFile?.writeText("$header\n")
+
         log(TAG, "DebugLogger initialized")
     }
 
-    fun getLogFile(context: Context): File {
-        val logDir = File(context.cacheDir, "logs")
-        logDir.mkdirs()
-        return File(logDir, "folderpub.log")
+    fun getLogFile(context: Context): File? {
+        return logFile?.takeIf { it.exists() }
     }
 
     fun shareLog(context: Context) {
-        val logFile = getLogFile(context)
-        if (!logFile.exists()) {
-            log(TAG, "No log file to share")
-            return
-        }
+        val file = getLogFile(context) ?: return
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
-            logFile
+            file
         )
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
