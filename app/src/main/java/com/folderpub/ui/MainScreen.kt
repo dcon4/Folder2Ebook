@@ -306,33 +306,36 @@ private fun buildEbook(
 
                 onProgress("Building volume ${volume.index} of ${volumes.size}...")
 
-                withContext(Dispatchers.IO) {
+                val outputUri = withContext(Dispatchers.IO) {
+                    val tempFile = File(context.cacheDir, "ebooks/${volumeTitle}.${format.lowercase()}")
+                    tempFile.parentFile?.mkdirs()
+
                     if (format == "EPUB") {
-                        val uri = saveToMediaStore(context, "$volumeTitle.epub", "application/epub+zip")
-                        if (uri != null) {
-                            context.contentResolver.openOutputStream(uri)?.use { os ->
-                                EpubBuilder.buildEpub(
-                                    context = context,
-                                    chapters = volume.chapters,
-                                    outputStream = os,
-                                    bookTitle = volumeTitle
-                                )
-                            }
+                        tempFile.outputStream().use { os ->
+                            EpubBuilder.buildEpub(
+                                context = context,
+                                chapters = volume.chapters,
+                                outputStream = os,
+                                bookTitle = volumeTitle
+                            )
                         }
                     } else {
-                        val uri = saveToMediaStore(context, "$volumeTitle.pdf", "application/pdf")
-                        if (uri != null) {
-                            context.contentResolver.openOutputStream(uri)?.use { os ->
-                                PdfBuilder.buildPdf(
-                                    context = context,
-                                    chapters = volume.chapters,
-                                    inputPdfUris = emptyList(),
-                                    outputStream = os,
-                                    bookTitle = volumeTitle
-                                )
-                            }
+                        tempFile.outputStream().use { os ->
+                            PdfBuilder.buildPdf(
+                                context = context,
+                                chapters = volume.chapters,
+                                inputPdfUris = emptyList(),
+                                outputStream = os,
+                                bookTitle = volumeTitle
+                            )
                         }
                     }
+
+                    copyToDownloads(context, tempFile, volumeTitle, format.lowercase())
+                }
+
+                if (outputUri == null) {
+                    throw java.io.IOException("Failed to save ebook to Downloads")
                 }
             }
 
@@ -351,12 +354,16 @@ private fun buildEbook(
     }
 }
 
-private fun saveToMediaStore(
+private fun copyToDownloads(
     context: android.content.Context,
-    fileName: String,
-    mimeType: String
+    sourceFile: File,
+    displayName: String,
+    extension: String
 ): Uri? {
     return try {
+        val mimeType = if (extension == "epub") "application/epub+zip" else "application/pdf"
+        val fileName = "$displayName.$extension"
+
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
@@ -372,9 +379,15 @@ private fun saveToMediaStore(
             MediaStore.Files.getContentUri("external")
         }
 
-        val uri = context.contentResolver.insert(collectionUri, contentValues)
+        val uri = context.contentResolver.insert(collectionUri, contentValues) ?: return null
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
+        context.contentResolver.openOutputStream(uri)?.use { os ->
+            sourceFile.inputStream().use { input ->
+                input.copyTo(os)
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             contentValues.clear()
             contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
             context.contentResolver.update(uri, contentValues, null, null)
@@ -382,7 +395,7 @@ private fun saveToMediaStore(
 
         uri
     } catch (e: Throwable) {
-        DebugLogger.log("MainScreen", "MediaStore save error: ${e.message}")
+        DebugLogger.log("MainScreen", "Copy to Downloads error: ${e.message}")
         null
     }
 }
