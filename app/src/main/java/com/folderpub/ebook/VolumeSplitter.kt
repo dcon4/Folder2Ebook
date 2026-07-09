@@ -5,44 +5,47 @@ import com.folderpub.debug.DebugLogger
 data class Volume(
     val index: Int,
     val chapters: List<ChapterContent>,
-    val pageEstimate: Int
+    val estimatedSizeBytes: Long
 )
 
 object VolumeSplitter {
 
     private const val TAG = "VolumeSplitter"
+    private const val CHARS_PER_MB = 1_000_000
+    private const val OVERHEAD_BYTES_PER_CHAPTER = 2_000
 
     fun splitIntoVolumes(
         chapters: List<ChapterContent>,
-        maxPagesPerVolume: Int
+        maxMbPerVolume: Int
     ): List<Volume> {
         if (chapters.isEmpty()) return emptyList()
+        val maxBytes = maxMbPerVolume * 1024L * 1024L
 
-        val chapterPages = chapters.map { estimatePages(it) }
+        val chapterSizes = chapters.map { estimateChapterBytes(it) }
         val volumes = mutableListOf<Volume>()
         var currentChapters = mutableListOf<ChapterContent>()
-        var currentPages = 0
+        var currentBytes = 0L
         var volumeIndex = 0
 
         for (i in chapters.indices) {
             val chapter = chapters[i]
-            val pages = chapterPages[i]
+            val size = chapterSizes[i]
 
-            if (currentPages + pages > maxPagesPerVolume && currentChapters.isNotEmpty()) {
+            if (currentBytes + size > maxBytes && currentChapters.isNotEmpty()) {
                 volumeIndex++
                 volumes.add(
                     Volume(
                         index = volumeIndex,
                         chapters = currentChapters.toList(),
-                        pageEstimate = currentPages
+                        estimatedSizeBytes = currentBytes
                     )
                 )
                 currentChapters = mutableListOf()
-                currentPages = 0
+                currentBytes = 0
             }
 
             currentChapters.add(chapter)
-            currentPages += pages
+            currentBytes += size
         }
 
         if (currentChapters.isNotEmpty()) {
@@ -51,23 +54,19 @@ object VolumeSplitter {
                 Volume(
                     index = volumeIndex,
                     chapters = currentChapters.toList(),
-                    pageEstimate = currentPages
+                    estimatedSizeBytes = currentBytes
                 )
             )
         }
 
         DebugLogger.log(
             TAG,
-            "Split ${chapters.size} chapters into ${volumes.size} volumes (max $maxPagesPerVolume pages each)"
+            "Split ${chapters.size} chapters into ${volumes.size} volumes (max ${maxMbPerVolume}MB each)"
         )
         return volumes
     }
 
-    private fun estimatePages(chapter: ChapterContent): Int {
-        val textLength = chapter.bodyHtml.length
-        val words = textLength / 6
-        val lines = words / 12
-        val pages = (lines / 40).coerceAtLeast(1)
-        return pages
+    private fun estimateChapterBytes(chapter: ChapterContent): Long {
+        return (chapter.bodyHtml.length * 0.3).toLong() + OVERHEAD_BYTES_PER_CHAPTER
     }
 }

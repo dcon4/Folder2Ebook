@@ -46,7 +46,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
     var buildProgress by remember { mutableStateOf("") }
     var bookTitle by remember { mutableStateOf("My Ebook") }
     var selectedFormat by remember { mutableStateOf("EPUB") }
-    var maxPages by remember { mutableStateOf("500") }
+    var maxMb by remember { mutableStateOf("30") }
     var pdfWarnings by remember { mutableStateOf(0) }
     var statusMessage by remember { mutableStateOf("Select a folder to begin") }
 
@@ -126,9 +126,9 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
             }
 
             OutlinedTextField(
-                value = maxPages,
-                onValueChange = { maxPages = it },
-                label = { Text("Max pages per volume") },
+                value = maxMb,
+                onValueChange = { maxMb = it },
+                label = { Text("Max MB per volume") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -182,7 +182,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
                             chapters = chapters,
                             bookTitle = bookTitle,
                             format = selectedFormat,
-                            maxPagesPerVolume = maxPages.toIntOrNull() ?: 500,
+                            maxMbPerVolume = maxMb.toIntOrNull() ?: 30,
                             onProgress = { buildProgress = it },
                             onStatus = { statusMessage = it },
                             onBuilding = { isBuilding = it },
@@ -282,7 +282,7 @@ private fun buildEbook(
     chapters: List<ChapterContent>,
     bookTitle: String,
     format: String,
-    maxPagesPerVolume: Int,
+    maxMbPerVolume: Int,
     onProgress: (String) -> Unit,
     onStatus: (String) -> Unit,
     onBuilding: (Boolean) -> Unit,
@@ -293,7 +293,7 @@ private fun buildEbook(
         onProgress("Splitting into volumes...")
         try {
             val volumes = withContext(Dispatchers.IO) {
-                VolumeSplitter.splitIntoVolumes(chapters, maxPagesPerVolume)
+                VolumeSplitter.splitIntoVolumes(chapters, maxMbPerVolume)
             }
             val inputPdfUris = emptyList<Uri>()
 
