@@ -19,11 +19,7 @@ object EpubBuilder {
     ) {
         val zip = ZipOutputStream(outputStream)
 
-        zip.putNextEntry(ZipEntry("mimetype").apply {
-            method = ZipEntry.STORED
-            compressedSize = 20
-            crc = 0x2BAB79F9
-        })
+        zip.putNextEntry(ZipEntry("mimetype"))
         zip.write("application/epub+zip".toByteArray())
         zip.closeEntry()
 
