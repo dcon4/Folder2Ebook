@@ -32,7 +32,7 @@ object ContentReader {
         }
     }
 
-    fun readChapter(context: Context, file: ChapterFile): ChapterContent {
+    suspend fun readChapter(context: Context, file: ChapterFile): ChapterContent {
         return try {
             val contentResolver = context.contentResolver
 
@@ -46,7 +46,7 @@ object ContentReader {
                             isPdf = false, pdfExtractionWarning = false
                         )
                     } else {
-                        readHtml(contentResolver, file)
+                        readHtml(context, file)
                     }
                 }
                 "txt" -> {
@@ -88,14 +88,17 @@ object ContentReader {
         }
     }
 
-    private fun readHtml(
-        contentResolver: android.content.ContentResolver,
+    private suspend fun readHtml(
+        context: Context,
         file: ChapterFile
     ): ChapterContent {
-        val rawHtml = readStream(contentResolver, file.uri)
+        val rawHtml = readStream(context.contentResolver, file.uri)
             ?: return ChapterContent(title = file.name, bodyHtml = "<p>[Empty file]</p>", isPdf = false, pdfExtractionWarning = false)
-        val bodyHtml = ReadabilityFormatter.extractArticle(rawHtml)
-        val title = TitleExtractor.extractTitle(file.name, rawHtml, isHtml = true)
+        val (title, bodyHtml) = ReadabilityFormatter.extractArticle(
+            context = context,
+            html = rawHtml,
+            fallbackTitle = TitleExtractor.extractTitle(file.name, rawHtml, isHtml = true)
+        )
         DebugLogger.verbose(TAG, "Read HTML: ${file.name} -> ${bodyHtml.length} chars")
         return ChapterContent(title = title, bodyHtml = bodyHtml, isPdf = false, pdfExtractionWarning = false)
     }

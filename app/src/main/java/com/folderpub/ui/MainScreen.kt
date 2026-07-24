@@ -64,7 +64,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
                     pdfWarnings = warnings
                     statusMessage = "Loaded ${contentList.size} chapters" +
                             if (warnings > 0) " ($warnings PDFs with low-quality extraction)" else ""
-                })
+                }, scope = scope)
             }, onScanning = { isScanning = it })
         }
     }
@@ -257,9 +257,10 @@ private fun scanFolder(
 private fun readChapters(
     context: android.content.Context,
     files: List<ChapterFile>,
-    onChapters: (List<ChapterContent>, Int) -> Unit
+    onChapters: (List<ChapterContent>, Int) -> Unit,
+    scope: kotlinx.coroutines.CoroutineScope
 ) {
-    Thread {
+    scope.launch(Dispatchers.IO) {
         try {
             val chapters = mutableListOf<ChapterContent>()
             var warnings = 0
@@ -268,13 +269,13 @@ private fun readChapters(
                 chapters.add(content)
                 if (content.pdfExtractionWarning) warnings++
             }
-            (context as? android.app.Activity)?.runOnUiThread {
+            withContext(Dispatchers.Main) {
                 onChapters(chapters, warnings)
             }
         } catch (e: Throwable) {
             DebugLogger.log("MainScreen", "Read error: ${e.javaClass.simpleName} - ${e.message}")
         }
-    }.start()
+    }
 }
 
 private fun buildEbook(

@@ -1,28 +1,183 @@
 package com.folderpub.ebook
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.folderpub.debug.DebugLogger
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
+import org.json.JSONTokener
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import kotlin.coroutines.resume
 
 object ReadabilityFormatter {
 
     private const val TAG = "ReadabilityFormatter"
+    private const val PAGE_TIMEOUT_MS = 30_000L
+    private const val JS_EVAL_TIMEOUT_MS = 30_000L
 
-    fun extractArticle(html: String): String {
+    private var readabilityJs: String? = null
+
+    private fun getReadabilityJs(context: Context): String {
+        if (readabilityJs == null) {
+            try {
+                val stream = context.assets.open("readability.js")
+                val reader = BufferedReader(InputStreamReader(stream))
+                readabilityJs = reader.readText()
+                reader.close()
+                DebugLogger.verbose(TAG, "Readability.js loaded (${readabilityJs!!.length} chars)")
+            } catch (e: Exception) {
+                DebugLogger.log(TAG, "Failed to load readability.js: ${e.message}")
+                readabilityJs = ""
+            }
+        }
+        return readabilityJs!!
+    }
+
+    suspend fun extractArticle(context: Context, html: String, fallbackTitle: String): Pair<String, String> {
+        val readability = getReadabilityJs(context)
+        if (readability.isBlank()) {
+            DebugLogger.verbose(TAG, "readability.js unavailable, falling back to Jsoup")
+            return extractWithJsoup(html, fallbackTitle)
+        }
+
+        val extractionJs = readability + """
+            (function() {
+                try {
+                    var article = new Readability(document).parse();
+                    if (article && article.content) {
+                        return JSON.stringify({
+                            title: (article.title || '').trim(),
+                            content: article.content
+                        });
+                    }
+                    return JSON.stringify({title: '', content: ''});
+                } catch(e) {
+                    return JSON.stringify({title: '', content: ''});
+                }
+            })();
+        """.trimIndent()
+
         return try {
-            val doc = Jsoup.parse(html)
-            removeCruft(doc)
-            val article = findArticle(doc)
-            if (article != null) {
-                cleanArticle(article)
-                article.html()
-            } else {
-                doc.body().html()
+            withTimeout(PAGE_TIMEOUT_MS + JS_EVAL_TIMEOUT_MS) {
+                extractWithWebView(context, extractionJs, html, fallbackTitle)
             }
         } catch (e: Throwable) {
-            DebugLogger.verbose(TAG, "Readability extraction failed: ${e.message}")
-            Jsoup.parse(html).body().html()
+            DebugLogger.verbose(TAG, "WebView extraction failed: ${e.message}, falling back to Jsoup")
+            extractWithJsoup(html, fallbackTitle)
+        }
+    }
+
+    private suspend fun extractWithWebView(
+        context: Context,
+        extractionJs: String,
+        html: String,
+        fallbackTitle: String
+    ): Pair<String, String> {
+        return suspendCancellableCoroutine { continuation ->
+            val mainHandler = Handler(Looper.getMainLooper())
+            var done = false
+
+            val wv = WebView(context).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.loadWithOverviewMode = true
+                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/124.0.6367.113 Mobile Safari/537.36"
+            }
+
+            val pageTimeout = Runnable {
+                if (done) return@Runnable
+                done = true
+                DebugLogger.verbose(TAG, "WebView page timeout")
+                wv.destroy()
+                if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
+            }
+            mainHandler.postDelayed(pageTimeout, PAGE_TIMEOUT_MS)
+
+            wv.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) {
+                    if (done) return
+                    if (url.isBlank() || url == "about:blank") return
+                    done = true
+                    mainHandler.removeCallbacks(pageTimeout)
+
+                    var jsDone = false
+                    val jsTimeout = Runnable {
+                        if (jsDone) return@Runnable
+                        jsDone = true
+                        DebugLogger.verbose(TAG, "WebView JS timeout")
+                        wv.destroy()
+                        if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
+                    }
+                    mainHandler.postDelayed(jsTimeout, JS_EVAL_TIMEOUT_MS)
+
+                    view.evaluateJavascript(extractionJs) { result ->
+                        if (jsDone) return@evaluateJavascript
+                        jsDone = true
+                        mainHandler.removeCallbacks(jsTimeout)
+                        wv.destroy()
+                        try {
+                            val inner = JSONTokener(result ?: "\"\"").nextValue().toString()
+                            val json = JSONObject(inner)
+                            val title = json.optString("title", "").ifBlank { fallbackTitle }
+                            val content = json.optString("content", "")
+                            if (content.isNotBlank()) {
+                                DebugLogger.verbose(TAG, "WebView extraction OK: ${content.length} chars")
+                                if (!continuation.isCancelled) continuation.resume(Pair(title, content))
+                            } else {
+                                DebugLogger.verbose(TAG, "WebView extraction empty, falling back to Jsoup")
+                                if (!continuation.isCancelled) continuation.resume(extractWithJsoup("", fallbackTitle))
+                            }
+                        } catch (e: Exception) {
+                            DebugLogger.verbose(TAG, "WebView JS parse error: ${e.message}")
+                            if (!continuation.isCancelled) continuation.resume(extractWithJsoup("", fallbackTitle))
+                        }
+                    }
+                }
+
+                override fun onReceivedError(view: WebView?, code: Int, desc: String?, failUrl: String?) {
+                    if (done) return
+                    done = true
+                    mainHandler.removeCallbacks(pageTimeout)
+                    wv.destroy()
+                    if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
+                }
+            }
+
+            wv.loadDataWithBaseURL("about:blank", html, "text/html", "UTF-8", null)
+
+            continuation.invokeOnCancellation {
+                mainHandler.removeCallbacks(pageTimeout)
+                try { wv.destroy() } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    private fun extractWithJsoup(html: String, fallbackTitle: String): Pair<String, String> {
+        if (html.isBlank()) return Pair(fallbackTitle, "")
+        return try {
+            val doc = Jsoup.parse(html)
+            doc.select("script, style, nav, footer, header, aside, form, iframe, noscript, svg, canvas, video, audio").remove()
+            var title = doc.select("h1").firstOrNull()?.text()?.trim()
+            if (title.isNullOrBlank()) title = doc.title().trim()
+            if (title.isNullOrBlank()) title = fallbackTitle
+
+            val body = doc.body() ?: return Pair(fallbackTitle, "")
+            val contentEl = doc.select("article").firstOrNull()
+                ?: body.children().filter { it.text().length > 200 }.maxByOrNull { it.text().length }
+                ?: body
+
+            Pair(title, contentEl.html())
+        } catch (e: Exception) {
+            DebugLogger.verbose(TAG, "Jsoup fallback error: ${e.message}")
+            Pair(fallbackTitle, "")
         }
     }
 
@@ -39,49 +194,5 @@ object ReadabilityFormatter {
             sb.append("<p>$escaped</p>\n")
         }
         return sb.toString()
-    }
-
-    private fun findArticle(doc: Document): Element? {
-        doc.select("article").first()?.let { return it }
-        doc.select("[role=main]").first()?.let { return it }
-        doc.select("main").first()?.let { return it }
-        doc.select("body").first()?.let { body ->
-            val candidates = body.children().filter { candidate ->
-                val text = candidate.text()
-                text.length > 200 && candidate.tagName() !in listOf("script", "style", "nav", "header", "footer")
-            }
-            return candidates.maxByOrNull { scoreElement(it) }
-        }
-        return null
-    }
-
-    private fun scoreElement(el: Element): Int {
-        val textLen = el.text().length
-        val linkLen = el.select("a").sumOf { it.text().length }
-        val commas = el.text().count { it == ',' }
-        return textLen - linkLen + (commas * 5)
-    }
-
-    private fun cleanArticle(el: Element) {
-        el.select("script, style, nav, footer, header, aside, .sidebar, .nav, .footer, .header, .ad, .advertisement, .social-share, .share, .comments, .comment, .related, .recommended").remove()
-        el.select("*").forEach { child ->
-            val attr = child.attr("class")
-            if (attr.contains("ad", ignoreCase = true) || attr.contains("sidebar", ignoreCase = true) || attr.contains("comment", ignoreCase = true) || attr.contains("share", ignoreCase = true) || attr.contains("nav", ignoreCase = true)) {
-                child.remove()
-            }
-        }
-        el.select("img[src~=(?i)\\.(svg|gif)]").remove()
-    }
-
-    private fun removeCruft(doc: Document) {
-        doc.select("script, style, nav, footer, header, aside, noscript, iframe, form").remove()
-        doc.select("*").forEach { el ->
-            if (el.id().isNotEmpty()) {
-                val id = el.id().lowercase()
-                if (id in setOf("sidebar", "nav", "navigation", "menu", "footer", "header", "comments", "comment", "advertisement", "ads", "social", "share", "related-posts", "recommendations")) {
-                    el.remove()
-                }
-            }
-        }
     }
 }
