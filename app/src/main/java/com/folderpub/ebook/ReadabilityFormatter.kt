@@ -171,7 +171,7 @@ object ReadabilityFormatter {
 
             val body = doc.body() ?: return Pair(fallbackTitle, "")
             val contentEl = doc.select("article").firstOrNull()
-                ?: body.children().filter { it.text().length > 200 }.maxByOrNull { it.text().length }
+                ?: body.children().toList().filter { it.text().length > 200 }.maxByOrNull { it.text().length }
                 ?: body
 
             Pair(title, contentEl.html())
