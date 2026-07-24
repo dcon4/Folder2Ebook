@@ -9,63 +9,51 @@ object TitleExtractor {
         content: String,
         isHtml: Boolean
     ): String {
-        val nameNoExt = fileName.substringBeforeLast(".").trim()
-
-        val level1 = tryLevel1(nameNoExt)
-        if (level1 != null) return level1
-
         if (isHtml) {
-            val level2 = tryLevel2(content)
-            if (level2 != null) return level2
+            val fromTag = tryHtmlTitle(content)
+            if (fromTag != null) return fromTag
         }
 
-        val level3 = tryLevel3(content)
-        if (level3 != null) return level3
+        val fromName = cleanFilename(fileName)
+        if (fromName != null) return fromName
+
+        val fromContent = tryFirstSentence(content)
+        if (fromContent != null) return fromContent
 
         return fileName.trim()
     }
 
-    private fun tryLevel1(nameNoExt: String): String? {
-        val cleaned = nameNoExt.replace("_", " ").trim()
-        if (looksLikeRealWords(cleaned)) {
-            return cleaned
-        }
-        return null
-    }
-
-    private fun tryLevel2(content: String): String? {
+    private fun tryHtmlTitle(content: String): String? {
         return try {
             val doc = Jsoup.parse(content)
             val title = doc.title().trim()
-            if (title.isNotEmpty()) {
-                if (title.length > 120) title.take(120) else title
-            } else null
+            if (title.isNotEmpty()) title.take(120) else null
         } catch (e: Exception) {
             null
         }
     }
 
-    private fun tryLevel3(content: String): String? {
-        val trimmed = content.trim()
-        if (trimmed.isEmpty()) return null
-        val firstLine = trimmed.lines().first().trim()
-        if (firstLine.isEmpty()) return null
-        return if (firstLine.length <= 80) {
-            firstLine
-        } else {
-            firstLine.take(77) + "..."
-        }
+    private fun cleanFilename(fileName: String): String? {
+        val cleaned = fileName.substringBeforeLast(".").replace("_", " ").trim()
+        if (cleaned.isEmpty()) return null
+        return cleaned
     }
 
-    private fun looksLikeRealWords(s: String): Boolean {
-        var letterCount = 0
-        var digitCount = 0
-        for (c in s) {
-            when {
-                c in 'a'..'z' || c in 'A'..'Z' -> letterCount++
-                c in '0'..'9' -> digitCount++
-            }
+    private fun tryFirstSentence(content: String): String? {
+        val trimmed = content.trim()
+        if (trimmed.isEmpty()) return null
+        var text = trimmed
+        if (!text.contains("<")) {
+            val firstLine = text.lines().first().trim()
+            if (firstLine.isNotEmpty()) text = firstLine
         }
-        return letterCount > digitCount * 2 && letterCount >= 3
+        if (text.length > 80) {
+            val cutoff = text.indexOfAny(charArrayOf('.', '!', '?', '\n'))
+            if (cutoff in 1..80) {
+                return text.substring(0, cutoff + 1).trim()
+            }
+            return text.take(77) + "..."
+        }
+        return text
     }
 }
