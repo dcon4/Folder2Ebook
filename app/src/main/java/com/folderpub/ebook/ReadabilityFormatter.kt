@@ -130,7 +130,7 @@ object ReadabilityFormatter {
                             val content = json.optString("content", "")
                             if (content.isNotBlank()) {
                                 DebugLogger.verbose(TAG, "WebView extraction OK: ${content.length} chars")
-                                if (!continuation.isCancelled) continuation.resume(Pair(title, content))
+                                if (!continuation.isCancelled) continuation.resume(Pair(title, cleanForXhtml(content)))
                             } else {
                                 DebugLogger.verbose(TAG, "WebView extraction empty, falling back to Jsoup")
                                 if (!continuation.isCancelled) continuation.resume(extractWithJsoup("", fallbackTitle))
@@ -164,7 +164,7 @@ object ReadabilityFormatter {
         if (html.isBlank()) return Pair(fallbackTitle, "")
         return try {
             val doc = Jsoup.parse(html)
-            doc.select("script, style, nav, footer, header, aside, form, iframe, noscript, svg, canvas, video, audio").remove()
+            doc.select("script, style, nav, footer, header, aside, form, iframe, noscript, svg, canvas, video, audio, picture, source").remove()
             var title = doc.select("h1").firstOrNull()?.text()?.trim()
             if (title.isNullOrBlank()) title = doc.title().trim()
             if (title.isNullOrBlank()) title = fallbackTitle
@@ -174,10 +174,41 @@ object ReadabilityFormatter {
                 ?: body.children().toList().filter { it.text().length > 200 }.maxByOrNull { it.text().length }
                 ?: body
 
-            Pair(title, contentEl.html())
+            Pair(title, cleanForXhtml(contentEl.html()))
         } catch (e: Exception) {
             DebugLogger.verbose(TAG, "Jsoup fallback error: ${e.message}")
             Pair(fallbackTitle, "")
+        }
+    }
+
+    private fun cleanForXhtml(html: String): String {
+        if (html.isBlank()) return html
+        return try {
+            val doc = Jsoup.parseBodyFragment(html)
+
+            doc.select("picture").forEach { picture ->
+                val img = picture.select("img").firstOrNull()
+                if (img != null) {
+                    picture.replaceWith(img)
+                } else {
+                    picture.remove()
+                }
+            }
+
+            doc.select("source, video, audio, canvas, svg, noscript, iframe, form, style, script").remove()
+
+            doc.select("img").forEach { img ->
+                img.removeAttr("srcset")
+                img.removeAttr("srcset")
+                img.removeAttr("loading")
+                img.removeAttr("decoding")
+                img.removeAttr("fetchpriority")
+            }
+
+            doc.body().html()
+        } catch (e: Exception) {
+            DebugLogger.verbose(TAG, "cleanForXhtml error: ${e.message}")
+            html
         }
     }
 
