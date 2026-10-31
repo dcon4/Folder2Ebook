@@ -58,12 +58,14 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
             scanFolder(context, uri, onResult = { result ->
                 scanResult = result
                 statusMessage = "Found ${result.chapters.size} files" +
-                        if (result.skipped.isNotEmpty()) " (${result.skipped.size} skipped)" else ""
+                        if (result.skippedCount > 0) " (${result.skippedCount} skipped)" else ""
                 readChapters(context, result.chapters, onChapters = { contentList, warnings ->
                     chapters = contentList
                     pdfWarnings = warnings
                     statusMessage = "Loaded ${contentList.size} chapters" +
                             if (warnings > 0) " ($warnings PDFs with low-quality extraction)" else ""
+                }, onProgress = { done, total ->
+                    statusMessage = "Reading chapters $done of $total..."
                 }, scope = scope)
             }, onScanning = { isScanning = it })
         }
@@ -151,7 +153,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
             if (scanResult != null) {
                 val result = scanResult!!
                 Text(
-                    text = "${result.chapters.size} files found, ${result.skipped.size} skipped",
+                    text = "${result.chapters.size} files found, ${result.skippedCount} skipped",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -209,21 +211,26 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
                 }
             }
 
-            if (scanResult?.skipped?.isNotEmpty() == true) {
+            if ((scanResult?.skippedCount ?: 0) > 0) {
+                val skipped = scanResult!!
                 Text(
-                    text = "Skipped files (unsupported format):",
+                    text = "Skipped files (${skipped.skippedCount}):",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = scanResult!!.skipped.take(20).joinToString("\n"),
+                    text = skipped.skippedByExt.entries
+                        .sortedByDescending { it.value }
+                        .take(8)
+                        .joinToString(", ") { ".${it.key} x${it.value}" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (scanResult!!.skipped.size > 20) {
+                skipped.skippedExamples.forEach { name ->
                     Text(
-                        text = "... and ${scanResult!!.skipped.size - 20} more",
-                        style = MaterialTheme.typography.bodySmall
+                        text = name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -258,16 +265,25 @@ private fun readChapters(
     context: android.content.Context,
     files: List<ChapterFile>,
     onChapters: (List<ChapterContent>, Int) -> Unit,
+    onProgress: (done: Int, total: Int) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope
 ) {
     scope.launch(Dispatchers.IO) {
         try {
             val chapters = mutableListOf<ChapterContent>()
             var warnings = 0
-            for (file in files) {
+            val total = files.size
+            for ((index, file) in files.withIndex()) {
                 val content = ContentReader.readChapter(context, file)
                 chapters.add(content)
                 if (content.pdfExtractionWarning) warnings++
+                if ((index + 1) % 25 == 0 || index + 1 == total) {
+                    val done = index + 1
+                    DebugLogger.verbose("MainScreen", "Read $done/$total chapters")
+                    withContext(Dispatchers.Main) {
+                        onProgress(done, total)
+                    }
+                }
             }
             withContext(Dispatchers.Main) {
                 onChapters(chapters, warnings)
