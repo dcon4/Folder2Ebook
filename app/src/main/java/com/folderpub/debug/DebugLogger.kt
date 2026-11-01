@@ -85,7 +85,7 @@ object DebugLogger {
 
     fun isVerboseEnabled(): Boolean = verboseEnabled
 
-    fun setVerboseEnabled(enabled: Boolean) {
+    fun updateVerboseLogging(enabled: Boolean) {
         verboseEnabled = enabled
         prefs?.edit()?.putBoolean(KEY_VERBOSE, enabled)?.apply()
     }

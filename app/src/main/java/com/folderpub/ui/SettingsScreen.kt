@@ -57,7 +57,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     checked = verboseEnabled,
                     onCheckedChange = { enabled ->
                         verboseEnabled = enabled
-                        DebugLogger.setVerboseEnabled(enabled)
+                        DebugLogger.updateVerboseLogging(enabled)
                     },
                     modifier = Modifier.semantics {
                         contentDescription = if (verboseEnabled) "Disable verbose logging" else "Enable verbose logging"
