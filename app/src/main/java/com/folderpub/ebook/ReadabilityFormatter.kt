@@ -49,6 +49,10 @@ object ReadabilityFormatter {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.loadWithOverviewMode = true
+            // Never fetch remote images/scripts/styles: the HTML is already local,
+            // and loading remote assets grows renderer memory until the process is killed.
+            settings.blockNetworkLoads = true
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) " +
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
                     "Chrome/124.0.6367.113 Mobile Safari/537.36"
@@ -162,6 +166,22 @@ object ReadabilityFormatter {
                     mainHandler.removeCallbacks(pageTimeout)
                     DebugLogger.verbose(TAG, "WebView load error: code=$code desc=$desc")
                     if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
+                }
+
+                override fun onRenderProcessGone(
+                    view: WebView?,
+                    detail: android.webkit.RenderProcessGoneDetail?
+                ): Boolean {
+                    DebugLogger.log(
+                        TAG,
+                        "WebView renderer died (didCrash=${detail?.didCrash()}) - using Jsoup fallback"
+                    )
+                    sharedWebView = null
+                    if (done) return true
+                    done = true
+                    mainHandler.removeCallbacks(pageTimeout)
+                    if (!continuation.isCancelled) continuation.resume(extractWithJsoup(html, fallbackTitle))
+                    return true
                 }
             }
 
