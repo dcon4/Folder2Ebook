@@ -6,7 +6,9 @@ import android.os.Looper
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.folderpub.debug.DebugLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -22,6 +24,7 @@ object ReadabilityFormatter {
     private const val JS_EVAL_TIMEOUT_MS = 30_000L
 
     private var readabilityJs: String? = null
+    private var sharedWebView: WebView? = null
 
     private fun getReadabilityJs(context: Context): String {
         if (readabilityJs == null) {
@@ -37,6 +40,21 @@ object ReadabilityFormatter {
             }
         }
         return readabilityJs!!
+    }
+
+    private fun getSharedWebView(context: Context): WebView {
+        sharedWebView?.let { return it }
+        DebugLogger.verbose(TAG, "Creating shared WebView")
+        val wv = WebView(context.applicationContext).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.loadWithOverviewMode = true
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/124.0.6367.113 Mobile Safari/537.36"
+        }
+        sharedWebView = wv
+        return wv
     }
 
     suspend fun extractArticle(context: Context, html: String, fallbackTitle: String): Pair<String, String> {
@@ -64,11 +82,17 @@ object ReadabilityFormatter {
         """.trimIndent()
 
         return try {
-            withTimeout(PAGE_TIMEOUT_MS + JS_EVAL_TIMEOUT_MS) {
-                extractWithWebView(context, extractionJs, html, fallbackTitle)
+            // WebView must be created and used on the main thread
+            withContext(Dispatchers.Main) {
+                withTimeout(PAGE_TIMEOUT_MS + JS_EVAL_TIMEOUT_MS) {
+                    extractWithWebView(context, extractionJs, html, fallbackTitle)
+                }
             }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            DebugLogger.verbose(TAG, "WebView extraction timeout, falling back to Jsoup")
+            extractWithJsoup(html, fallbackTitle)
         } catch (e: Throwable) {
-            DebugLogger.verbose(TAG, "WebView extraction failed: ${e.message}, falling back to Jsoup")
+            DebugLogger.log(TAG, "WebView extraction failed: ${e.javaClass.simpleName}: ${e.message}, falling back to Jsoup")
             extractWithJsoup(html, fallbackTitle)
         }
     }
@@ -83,20 +107,12 @@ object ReadabilityFormatter {
             val mainHandler = Handler(Looper.getMainLooper())
             var done = false
 
-            val wv = WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.loadWithOverviewMode = true
-                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) " +
-                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/124.0.6367.113 Mobile Safari/537.36"
-            }
+            val wv = getSharedWebView(context)
 
             val pageTimeout = Runnable {
                 if (done) return@Runnable
                 done = true
                 DebugLogger.verbose(TAG, "WebView page timeout")
-                wv.destroy()
                 if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
             }
             mainHandler.postDelayed(pageTimeout, PAGE_TIMEOUT_MS)
@@ -104,7 +120,7 @@ object ReadabilityFormatter {
             wv.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     if (done) return
-                    if (url.isBlank() || url == "about:blank") return
+                    if (url.isBlank()) return
                     done = true
                     mainHandler.removeCallbacks(pageTimeout)
 
@@ -113,7 +129,6 @@ object ReadabilityFormatter {
                         if (jsDone) return@Runnable
                         jsDone = true
                         DebugLogger.verbose(TAG, "WebView JS timeout")
-                        wv.destroy()
                         if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
                     }
                     mainHandler.postDelayed(jsTimeout, JS_EVAL_TIMEOUT_MS)
@@ -122,7 +137,6 @@ object ReadabilityFormatter {
                         if (jsDone) return@evaluateJavascript
                         jsDone = true
                         mainHandler.removeCallbacks(jsTimeout)
-                        wv.destroy()
                         try {
                             val inner = JSONTokener(result ?: "\"\"").nextValue().toString()
                             val json = JSONObject(inner)
@@ -133,11 +147,11 @@ object ReadabilityFormatter {
                                 if (!continuation.isCancelled) continuation.resume(Pair(title, cleanForXhtml(content)))
                             } else {
                                 DebugLogger.verbose(TAG, "WebView extraction empty, falling back to Jsoup")
-                                if (!continuation.isCancelled) continuation.resume(extractWithJsoup("", fallbackTitle))
+                                if (!continuation.isCancelled) continuation.resume(extractWithJsoup(html, fallbackTitle))
                             }
                         } catch (e: Exception) {
                             DebugLogger.verbose(TAG, "WebView JS parse error: ${e.message}")
-                            if (!continuation.isCancelled) continuation.resume(extractWithJsoup("", fallbackTitle))
+                            if (!continuation.isCancelled) continuation.resume(extractWithJsoup(html, fallbackTitle))
                         }
                     }
                 }
@@ -146,16 +160,15 @@ object ReadabilityFormatter {
                     if (done) return
                     done = true
                     mainHandler.removeCallbacks(pageTimeout)
-                    wv.destroy()
+                    DebugLogger.verbose(TAG, "WebView load error: code=$code desc=$desc")
                     if (!continuation.isCancelled) continuation.resume(Pair(fallbackTitle, ""))
                 }
             }
 
-            wv.loadDataWithBaseURL("about:blank", html, "text/html", "UTF-8", null)
+            wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
 
             continuation.invokeOnCancellation {
                 mainHandler.removeCallbacks(pageTimeout)
-                try { wv.destroy() } catch (_: Throwable) {}
             }
         }
     }
@@ -198,7 +211,6 @@ object ReadabilityFormatter {
             doc.select("source, video, audio, canvas, svg, noscript, iframe, form, style, script").remove()
 
             doc.select("img").forEach { img ->
-                img.removeAttr("srcset")
                 img.removeAttr("srcset")
                 img.removeAttr("loading")
                 img.removeAttr("decoding")

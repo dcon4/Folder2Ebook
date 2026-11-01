@@ -11,15 +11,26 @@ class FolderPubApp : Application() {
         DebugLogger.init(this)
         ContentReader.ensurePdfBoxInitialized(this)
 
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            DebugLogger.log("Crash", "${throwable.javaClass.simpleName}: ${throwable.message}")
-            val crashFile = File(cacheDir, "crash_log.txt")
-            crashFile.writeText(
-                "Thread: ${thread.name}\n" +
-                "Exception: ${throwable.javaClass.name}\n" +
-                "Message: ${throwable.message}\n" +
-                java.util.Arrays.toString(throwable.stackTrace).replace(", ", "\n  at ")
-            )
+            DebugLogger.log("CRASH", "${thread.name}: ${throwable.javaClass.name}: ${throwable.message}")
+            throwable.stackTrace.take(15).forEach { element ->
+                DebugLogger.log("CRASH", "  at $element")
+            }
+            try {
+                val crashFile = File(cacheDir, "crash_log.txt")
+                crashFile.writeText(
+                    "Thread: ${thread.name}\n" +
+                    "Exception: ${throwable.javaClass.name}\n" +
+                    "Message: ${throwable.message}\n" +
+                    java.util.Arrays.toString(throwable.stackTrace).replace(", ", "\n  at ")
+                )
+            } catch (_: Throwable) {}
+            if (previousHandler != null) {
+                previousHandler.uncaughtException(thread, throwable)
+            } else {
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
         }
     }
 }

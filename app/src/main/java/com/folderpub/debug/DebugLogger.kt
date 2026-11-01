@@ -4,26 +4,22 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Context.dataStore by preferencesDataStore(name = "debug_prefs")
-
 object DebugLogger {
 
     private const val TAG = "FolderPub"
     private const val APP_NAME = "folderpub"
+    private const val PREFS_NAME = "debug_prefs"
+    private const val KEY_VERBOSE = "verbose_logging"
     private val lineFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val fileNameFormat = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US)
 
-    var verboseEnabled = false
+    var verboseEnabled = true
+    private var prefs: android.content.SharedPreferences? = null
     private var logFile: File? = null
 
     fun log(tag: String, message: String) {
@@ -49,7 +45,8 @@ object DebugLogger {
     }
 
     fun init(context: Context) {
-        verboseEnabled = false
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        verboseEnabled = prefs!!.getBoolean(KEY_VERBOSE, true)
 
         val logDir = File(context.cacheDir, "logs")
         logDir.mkdirs()
@@ -64,7 +61,7 @@ object DebugLogger {
         val header = "${lineFormat.format(Date())} [$APP_NAME] [VERBOSE] Logger initialized (build $buildNumber)"
         logFile?.writeText("$header\n")
 
-        log(TAG, "DebugLogger initialized")
+        log(TAG, "DebugLogger initialized (verbose=$verboseEnabled)")
     }
 
     fun getLogFile(context: Context): File? {
@@ -86,17 +83,10 @@ object DebugLogger {
         context.startActivity(Intent.createChooser(intent, "Share debug log"))
     }
 
-    fun verboseEnabledFlow(context: Context): Flow<Boolean> =
-        context.dataStore.data.map { prefs ->
-            prefs[KEY_VERBOSE] ?: false
-        }
+    fun isVerboseEnabled(): Boolean = verboseEnabled
 
-    suspend fun setVerboseEnabled(context: Context, enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_VERBOSE] = enabled
-        }
+    fun setVerboseEnabled(enabled: Boolean) {
         verboseEnabled = enabled
+        prefs?.edit()?.putBoolean(KEY_VERBOSE, enabled)?.apply()
     }
-
-    private val KEY_VERBOSE = booleanPreferencesKey("verbose_logging")
 }

@@ -12,16 +12,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.folderpub.debug.DebugLogger
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    val verboseEnabled by DebugLogger.verboseEnabledFlow(context)
-        .collectAsState(initial = false)
+    var verboseEnabled by remember { mutableStateOf(DebugLogger.isVerboseEnabled()) }
 
     Scaffold(
         topBar = {
@@ -61,9 +56,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Switch(
                     checked = verboseEnabled,
                     onCheckedChange = { enabled ->
-                        scope.launch {
-                            DebugLogger.setVerboseEnabled(context, enabled)
-                        }
+                        verboseEnabled = enabled
+                        DebugLogger.setVerboseEnabled(enabled)
                     },
                     modifier = Modifier.semantics {
                         contentDescription = if (verboseEnabled) "Disable verbose logging" else "Enable verbose logging"
@@ -73,7 +67,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Text(
                 text = "Verbose logs provide detailed information for debugging. " +
-                        "Enable only when troubleshooting, as it uses more battery.",
+                        "On by default; turn off to save battery.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -270,6 +270,7 @@ private fun readChapters(
 ) {
     scope.launch(Dispatchers.IO) {
         try {
+            DebugLogger.log("MainScreen", "Reading ${files.size} chapters")
             val chapters = mutableListOf<ChapterContent>()
             var warnings = 0
             val total = files.size
@@ -277,14 +278,15 @@ private fun readChapters(
                 val content = ContentReader.readChapter(context, file)
                 chapters.add(content)
                 if (content.pdfExtractionWarning) warnings++
-                if ((index + 1) % 25 == 0 || index + 1 == total) {
+                if ((index + 1) % 100 == 0 || index + 1 == total) {
                     val done = index + 1
-                    DebugLogger.verbose("MainScreen", "Read $done/$total chapters")
+                    DebugLogger.log("MainScreen", "Read $done/$total chapters")
                     withContext(Dispatchers.Main) {
                         onProgress(done, total)
                     }
                 }
             }
+            DebugLogger.log("MainScreen", "Read complete: ${chapters.size} chapters loaded")
             withContext(Dispatchers.Main) {
                 onChapters(chapters, warnings)
             }
